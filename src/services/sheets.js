@@ -32,6 +32,7 @@ const ROW_HEIGHT = 30; // tinggi baris data (piksel)
 
 // Retry dengan exponential backoff untuk transient Google API errors
 const RETRYABLE_CODES = new Set([429, 500, 502, 503, 504]);
+const RETRYABLE_MESSAGES = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'socket hang up', 'network'];
 
 async function withRetry(label, fn, maxAttempts = 4) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -39,10 +40,13 @@ async function withRetry(label, fn, maxAttempts = 4) {
       return await fn();
     } catch (error) {
       const status = error?.response?.status || error?.code;
-      const isRetryable = RETRYABLE_CODES.has(Number(status));
+      const message = error?.message || '';
+      const isRetryableCode = RETRYABLE_CODES.has(Number(status));
+      const isRetryableMessage = RETRYABLE_MESSAGES.some((m) => message.includes(m));
+      const isRetryable = isRetryableCode || isRetryableMessage;
       if (!isRetryable || attempt === maxAttempts) throw error;
       const delay = 1000 * 2 ** (attempt - 1);
-      logger.warning(`${label} failed (${status}), retrying in ${delay}ms`, { attempt });
+      logger.warning(`${label} failed (${status || message}), retrying in ${delay}ms`, { attempt });
       await new Promise((r) => setTimeout(r, delay));
     }
   }
