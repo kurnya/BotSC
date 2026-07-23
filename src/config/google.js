@@ -42,7 +42,6 @@ async function loadSavedToken(oAuth2Client) {
 
 async function saveToken(oAuth2Client) {
   const creds = oAuth2Client.credentials;
-  // Pertahankan refresh_token lama jika yang baru tidak ada
   let existing = {};
   try {
     existing = JSON.parse(await fs.readFile(OAUTH_TOKEN_PATH, 'utf8'));
@@ -69,7 +68,7 @@ async function runOAuthFlow(oAuth2Client) {
     });
 
     console.log('\n========================================');
-    console.log('Buka URL berikut di browser untuk login Google Drive:');
+    console.log('Buka URL berikut di browser untuk otorisasi Google Drive:');
     console.log('\n' + authUrl + '\n');
     console.log('Menunggu callback di http://localhost:' + REDIRECT_PORT + ' ...');
     console.log('========================================\n');
@@ -83,13 +82,13 @@ async function runOAuthFlow(oAuth2Client) {
           return;
         }
 
-        res.end('<h2>Login berhasil! Tutup tab ini dan kembali ke terminal.</h2>');
+        res.end('<h2>Otorisasi berhasil! Tutup tab ini dan kembali ke terminal.</h2>');
         server.close();
 
         const { tokens } = await oAuth2Client.getToken(code);
         oAuth2Client.setCredentials(tokens);
         await saveToken(oAuth2Client);
-        logger.info('OAuth token berhasil disimpan');
+        logger.info('OAuth token berhasil disimpan — tidak perlu login lagi');
         resolve();
       } catch (err) {
         server.close();
@@ -112,15 +111,16 @@ async function getOAuthDriveClient() {
   const hasToken = await loadSavedToken(oAuth2Client);
 
   if (!hasToken) {
+    // Hanya terjadi sekali — pertama kali setup
     await runOAuthFlow(oAuth2Client);
   }
 
-  // Auto-refresh token jika expired, simpan ulang dengan refresh_token tetap terjaga
+  // Auto-refresh token otomatis saat expired, tidak perlu interaksi user
   oAuth2Client.on('tokens', async (tokens) => {
     const updated = { ...oAuth2Client.credentials, ...tokens };
     oAuth2Client.setCredentials(updated);
     await saveToken(oAuth2Client);
-    logger.info('OAuth token diperbarui');
+    logger.info('OAuth token di-refresh otomatis');
   });
 
   cachedDriveClient = google.drive({ version: 'v3', auth: oAuth2Client });

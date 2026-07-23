@@ -29,7 +29,9 @@ const messageQueue = new MessageQueue();
 
 async function initGoogle() {
   const config = getAppConfig();
-  const clients = await getGoogleClients();
+  logger.info('Initializing Google clients...');
+  const clients = await getGoogleClients(); // Restore await
+  logger.info('Clients received', { hasDrive: !!clients.drive, hasSheets: !!clients.sheets });
   drive = clients.drive;
   sheets = clients.sheets;
   spreadsheetId = config.spreadsheetId;

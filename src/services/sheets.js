@@ -19,6 +19,17 @@ const FULL_BORDER = {
   innerVertical: BORDER_STYLE
 };
 
+// Lebar kolom fixed (piksel)
+const COL_WIDTHS = [
+  { index: 0, width: 50  },  // A: No
+  { index: 1, width: 110 },  // B: Tanggal
+  { index: 2, width: 100 },  // C: Jam
+  { index: 3, width: 250 },  // D: Deskripsi
+  { index: 4, width: 120 },  // E: Link Foto (teks "Lihat Foto", tidak perlu lebar)
+];
+
+const ROW_HEIGHT = 30; // tinggi baris data (piksel)
+
 // Retry dengan exponential backoff untuk transient Google API errors
 const RETRYABLE_CODES = new Set([429, 500, 502, 503, 504]);
 
@@ -66,18 +77,19 @@ export async function ensureSpreadsheetHeader(sheets, spreadsheetId, sheetName =
     logger.info('Spreadsheet header ensured');
   }
 
-  // Format header: bold + background abu-abu + auto resize
+  // Format header + kolom B & C sebagai text (bukan auto-detect number)
   await withRetry('formatHeader', () =>
     sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {
         requests: [
+          // Format header row (bold + background biru pastel)
           {
             repeatCell: {
               range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 5 },
               cell: {
                 userEnteredFormat: {
-                  backgroundColor: { red: 0.85, green: 0.85, blue: 0.85 },
+                  backgroundColor: { red: 0.68, green: 0.85, blue: 0.9 }, // Biru pastel
                   textFormat: { bold: true },
                   horizontalAlignment: 'CENTER',
                   verticalAlignment: 'MIDDLE'
@@ -86,9 +98,49 @@ export async function ensureSpreadsheetHeader(sheets, spreadsheetId, sheetName =
               fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)'
             }
           },
+          // Format kolom B (Tanggal) sebagai TEXT
           {
-            autoResizeDimensions: {
-              dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 5 }
+            repeatCell: {
+              range: { sheetId, startRowIndex: 1, endRowIndex: 10000, startColumnIndex: 1, endColumnIndex: 2 },
+              cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } },
+              fields: 'userEnteredFormat.numberFormat'
+            }
+          },
+          // Format kolom C (Jam) sebagai TEXT
+          {
+            repeatCell: {
+              range: { sheetId, startRowIndex: 1, endRowIndex: 10000, startColumnIndex: 2, endColumnIndex: 3 },
+              cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } },
+              fields: 'userEnteredFormat.numberFormat'
+            }
+          },
+          // Format kolom D (Deskripsi) rata kiri
+          {
+            repeatCell: {
+              range: { sheetId, startRowIndex: 1, endRowIndex: 10000, startColumnIndex: 3, endColumnIndex: 4 },
+              cell: {
+                userEnteredFormat: {
+                  horizontalAlignment: 'LEFT',
+                  verticalAlignment: 'MIDDLE'
+                }
+              },
+              fields: 'userEnteredFormat(horizontalAlignment,verticalAlignment)'
+            }
+          },
+          // Set lebar kolom fixed
+          ...COL_WIDTHS.map(({ index, width }) => ({
+            updateDimensionProperties: {
+              range: { sheetId, dimension: 'COLUMNS', startIndex: index, endIndex: index + 1 },
+              properties: { pixelSize: width },
+              fields: 'pixelSize'
+            }
+          })),
+          // Set tinggi header row
+          {
+            updateDimensionProperties: {
+              range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: 1 },
+              properties: { pixelSize: 35 },
+              fields: 'pixelSize'
             }
           }
         ]
@@ -131,23 +183,29 @@ export async function appendBackupRow(sheets, spreadsheetId, row, sheetName = 'S
   const rowIndex = currentRow; // baris data ke-N (1-based, header di baris 1)
   const values = [[currentRow, ...row]];
 
-  // Tulis data
+  // Tulis data tanpa link dulu (link akan diset via textFormat di step berikutnya)
+  const rowValues = [[...values[0].slice(0, 4), 'Lihat Foto']];
+
   await withRetry('appendRow', () =>
     sheets.spreadsheets.values.append({
       spreadsheetId,
       range: `${sheetName}!A:E`,
-      valueInputOption: 'USER_ENTERED',
+      valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
-      requestBody: { values }
+      requestBody: { values: rowValues }
     })
   );
 
-  // Apply border + auto resize kolom setelah data masuk
+  // Ambil URL asli dari parameter row (index 3 = link, karena row = [tanggal, jam, deskripsi, link])
+  const linkUrl = row[3] || '';
+
+  // Apply border + set tinggi baris + set hyperlink setelah data masuk
   await withRetry('formatRow', () =>
     sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {
         requests: [
+          // Border pada baris baru
           {
             updateBorders: {
               range: {
@@ -160,12 +218,40 @@ export async function appendBackupRow(sheets, spreadsheetId, row, sheetName = 'S
               ...FULL_BORDER
             }
           },
+          // Set tinggi baris data
           {
-            autoResizeDimensions: {
-              dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 5 }
+            updateDimensionProperties: {
+              range: { sheetId, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 },
+              properties: { pixelSize: ROW_HEIGHT },
+              fields: 'pixelSize'
             }
-          }
-        ]
+          },
+          // Set hyperlink di kolom E menggunakan textFormat (tidak pakai formula)
+          linkUrl ? {
+            updateCells: {
+              range: {
+                sheetId,
+                startRowIndex: rowIndex,
+                endRowIndex: rowIndex + 1,
+                startColumnIndex: 4,
+                endColumnIndex: 5
+              },
+              rows: [{
+                values: [{
+                  userEnteredValue: { stringValue: 'Lihat Foto' },
+                  userEnteredFormat: {
+                    textFormat: {
+                      link: { uri: linkUrl },
+                      foregroundColor: { blue: 1.0 }, // warna biru untuk link
+                      underline: true
+                    }
+                  }
+                }]
+              }],
+              fields: 'userEnteredValue,userEnteredFormat.textFormat'
+            }
+          } : null
+        ].filter(Boolean)
       }
     })
   );

@@ -68,7 +68,8 @@ export async function handleImageMessage({ msg, client, drive, sheets, spreadshe
     const uploaded = await uploadWebpToDrive(drive, outputPath, uploadName, folderId);
     await makeAnyoneReadable(drive, uploaded.id).catch(() => {});
 
-    const link = uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`;
+    // Gunakan URL bersih tanpa query parameter agar tidak rusak saat dijadikan formula Sheets
+    const link = `https://drive.google.com/file/d/${uploaded.id}/view`;
 
     // Hanya catat ke spreadsheet jika berhasil
     await appendBackupRow(sheets, runtimeSpreadsheetId, [

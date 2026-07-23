@@ -19,16 +19,25 @@ async function findFolder(drive, parentId, name) {
     'trashed = false'
   ].join(' and ');
 
-  const response = await drive.files.list({
-    q: query,
-    fields: 'files(id, name)',
-    pageSize: 10,
-    spaces: 'drive',
-    includeItemsFromAllDrives: true,
-    supportsAllDrives: true
-  });
+  try {
+    const response = await drive.files.list({
+      q: query,
+      fields: 'files(id, name)',
+      pageSize: 10,
+      spaces: 'drive',
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true
+    });
 
-  return response.data.files?.[0] || null;
+    return response.data.files?.[0] || null;
+  } catch (error) {
+    // Jika parent folder tidak ditemukan, return null agar buat folder baru
+    if (error?.response?.status === 404 || error?.message?.includes('File not found')) {
+      logger.warning('Parent folder not found, will recreate', { parentId, name });
+      return null;
+    }
+    throw error;
+  }
 }
 
 async function createFolder(drive, parentId, name) {
@@ -53,7 +62,27 @@ export async function ensureDateFolder(drive, rootFolderId, year, month, day) {
 async function _ensureDateFolderInner(drive, rootFolderId, year, month, day) {
   const cache = await loadJsonCache(cacheFile, {});
   const key = makeKey(year, month, day);
-  if (cache[key]) return cache[key];
+  
+  // Cek cache dulu, tapi validasi apakah masih ada
+  if (cache[key]) {
+    try {
+      // Verifikasi folder masih exist
+      await drive.files.get({ fileId: cache[key], fields: 'id', supportsAllDrives: true });
+      return cache[key];
+    } catch (error) {
+      // Folder tidak ditemukan, clear cache dan buat ulang
+      if (error?.response?.status === 404 || error?.message?.includes('File not found')) {
+        logger.warning('Cached folder not found, clearing cache and recreating', { folderId: cache[key] });
+        // Clear semua cache untuk tanggal ini dan parent-nya
+        delete cache[key];
+        delete cache[`${year}/${month}`];
+        delete cache[String(year)];
+        await saveJsonCache(cacheFile, cache);
+      } else {
+        throw error;
+      }
+    }
+  }
 
   const yearKey = String(year);
   const monthKey = `${year}/${month}`;
