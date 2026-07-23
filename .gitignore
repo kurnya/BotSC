@@ -1,0 +1,10 @@
+node_modules
+temp
+src/auth
+*.log
+logs/*.log
+.DS_Store
+.env
+credentials.json
+oauth_client.json
+

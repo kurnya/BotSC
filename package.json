@@ -1,0 +1,31 @@
+{
+  "name": "wa-drive-backup",
+  "version": "1.0.0",
+  "description": "WhatsApp photo backup bot to Google Drive and Google Sheets using Baileys.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "list-groups": "node scripts/list-groups.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop botsc",
+    "pm2:restart": "pm2 restart botsc",
+    "pm2:logs": "pm2 logs botsc",
+    "pm2:status": "pm2 status"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@google-cloud/local-auth": "^3.0.1",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "dayjs": "^1.11.13",
+    "dotenv": "^16.4.7",
+    "fs-extra": "^11.3.0",
+    "googleapis": "^153.0.0",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "0.12.0",
+    "sharp": "^0.34.2"
+  }
+}
