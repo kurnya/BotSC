@@ -203,7 +203,7 @@ export async function appendBackupRow(sheets, spreadsheetId, row, sheetName = 'S
   // Ambil URL asli dari parameter row (index 3 = link, karena row = [tanggal, jam, deskripsi, link])
   const linkUrl = row[3] || '';
 
-  // Apply border + set tinggi baris + set hyperlink setelah data masuk
+  // Apply border + set tinggi baris + set hyperlink + alignment setelah data masuk
   await withRetry('formatRow', () =>
     sheets.spreadsheets.batchUpdate({
       spreadsheetId,
@@ -230,6 +230,22 @@ export async function appendBackupRow(sheets, spreadsheetId, row, sheetName = 'S
               fields: 'pixelSize'
             }
           },
+          // Kolom A, B, C — rata tengah
+          {
+            repeatCell: {
+              range: { sheetId, startRowIndex: rowIndex, endRowIndex: rowIndex + 1, startColumnIndex: 0, endColumnIndex: 3 },
+              cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE' } },
+              fields: 'userEnteredFormat(horizontalAlignment,verticalAlignment)'
+            }
+          },
+          // Kolom D (Deskripsi) — rata kiri
+          {
+            repeatCell: {
+              range: { sheetId, startRowIndex: rowIndex, endRowIndex: rowIndex + 1, startColumnIndex: 3, endColumnIndex: 4 },
+              cell: { userEnteredFormat: { horizontalAlignment: 'LEFT', verticalAlignment: 'MIDDLE' } },
+              fields: 'userEnteredFormat(horizontalAlignment,verticalAlignment)'
+            }
+          },
           // Set hyperlink di kolom E menggunakan textFormat (tidak pakai formula)
           linkUrl ? {
             updateCells: {
@@ -244,15 +260,17 @@ export async function appendBackupRow(sheets, spreadsheetId, row, sheetName = 'S
                 values: [{
                   userEnteredValue: { stringValue: 'Lihat Foto' },
                   userEnteredFormat: {
+                    horizontalAlignment: 'CENTER',
+                    verticalAlignment: 'MIDDLE',
                     textFormat: {
                       link: { uri: linkUrl },
-                      foregroundColor: { blue: 1.0 }, // warna biru untuk link
+                      foregroundColor: { blue: 1.0 },
                       underline: true
                     }
                   }
                 }]
               }],
-              fields: 'userEnteredValue,userEnteredFormat.textFormat'
+              fields: 'userEnteredValue,userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)'
             }
           } : null
         ].filter(Boolean)
