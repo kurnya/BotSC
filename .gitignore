@@ -7,4 +7,5 @@ logs/*.log
 .env
 credentials.json
 oauth_client.json
+backup-session
 
