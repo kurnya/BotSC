@@ -9,6 +9,7 @@ import { initSheetCounter, ensureSpreadsheetHeader } from './services/sheets.js'
 import { handleImageMessage } from './handlers/imageHandler.js';
 import { logger } from './utils/logger.js';
 import { MessageQueue } from './utils/queue.js';
+import { createDocumentServer } from './server.js';
 
 // ── Global crash handler ────────────────────────────────────────────────────
 process.on('uncaughtException', (error) => {
@@ -75,6 +76,24 @@ function getReconnectDelay() {
   return delay;
 }
 
+// Socket aktif saat ini (null saat terputus) — dipakai server HTTP pengirim dokumen
+let activeSock = null;
+let serverStarted = false;
+
+function startDocumentServer() {
+  if (serverStarted) return;
+  const token = process.env.SEND_TOKEN;
+  const groupId = process.env.SEND_GROUP_ID;
+  const port = process.env.PORT || process.env.SERVER_PORT;
+  if (!token || !groupId || !port) {
+    logger.warning('Server kirim dokumen nonaktif: set SEND_TOKEN, SEND_GROUP_ID, dan PORT/SERVER_PORT');
+    return;
+  }
+  serverStarted = true;
+  createDocumentServer({ getSock: () => activeSock, token, groupId, corsOrigin: process.env.CORS_ORIGIN || '*' })
+    .listen(port, () => logger.info('Server kirim dokumen aktif', { port }));
+}
+
 async function startBot() {
   const config = getAppConfig();
   await fs.ensureDir(path.resolve(process.cwd(), config.whatsappSessionFolder));
@@ -114,6 +133,8 @@ async function startBot() {
 
     if (connection === 'open') {
       reconnectAttempts = 0; // reset backoff setelah berhasil connect
+      activeSock = sock;
+      startDocumentServer();
       logger.success('WhatsApp bot connected');
       
       // Log konfigurasi grup yang dimonitor
@@ -131,6 +152,7 @@ async function startBot() {
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = code !== DisconnectReason.loggedOut;
+      if (activeSock === sock) activeSock = null;
       logger.warning('Connection closed', { code, shouldReconnect });
 
       if (shouldReconnect) {
